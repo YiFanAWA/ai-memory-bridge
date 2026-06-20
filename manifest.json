@@ -1,0 +1,10 @@
+{
+  "id": "ai-memory-bridge",
+  "name": "AI Memory Bridge",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Drag & drop notes into a memory panel to connect your Obsidian vault as AI memory for Claude Code and other AI agents via MCP protocol.",
+  "author": "",
+  "authorUrl": "",
+  "isDesktopOnly": true
+}

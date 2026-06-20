@@ -1,0 +1,27 @@
+node_modules/
+main.js
+main.js.map
+dist/
+*.log
+.DS_Store
+
+# Build artifacts
+*.tgz
+*.tar.gz
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Obsidian vault (test data)
+test-vault/
+
+# Environment
+.env
+.env.local
