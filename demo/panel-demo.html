@@ -2,304 +2,150 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI Memory Bridge - Obsidian Panel Demo</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: #1e1e2e; color: #cdd6f4; padding: 20px;
-    display: flex; gap: 20px; height: 100vh;
-  }
-
-  /* Obsidian mock sidebar */
-  .obsidian-sidebar {
-    width: 300px; background: #181825; border-radius: 8px;
-    display: flex; flex-direction: column; overflow: hidden;
-    border: 1px solid #313244;
-  }
-  .panel-header {
-    padding: 12px 16px; border-bottom: 1px solid #313244;
-    display: flex; align-items: center; justify-content: space-between;
-    background: #1e1e2e;
-  }
-  .panel-title { font-size: 14px; font-weight: 600; }
-  .panel-count {
-    background: #cba6f7; color: #1e1e2e; font-size: 11px;
-    padding: 2px 8px; border-radius: 10px; font-weight: 700;
-  }
-
-  /* Drop zone */
-  .drop-zone {
-    flex: 1; padding: 12px; overflow-y: auto;
-    min-height: 200px; border: 2px dashed #45475a; margin: 8px;
-    border-radius: 6px; transition: border-color 0.2s;
-  }
-  .drop-zone.drag-over { border-color: #cba6f7; background: rgba(203,166,247,0.05); }
-
-  /* Memory items */
-  .memory-item {
-    display: flex; align-items: center; gap: 10px;
-    padding: 10px 12px; background: #313244; border-radius: 6px;
-    margin-bottom: 6px; cursor: pointer; transition: background 0.15s;
-    border-left: 3px solid #cba6f7;
-  }
-  .memory-item:hover { background: #45475a; }
-  .item-icon { font-size: 16px; }
-  .item-info { flex: 1; min-width: 0; }
-  .item-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .item-path { font-size: 10px; color: #a6adc8; }
-  .item-remove {
-    color: #f38ba8; font-size: 18px; cursor: pointer; padding: 0 4px;
-    opacity: 0.6; transition: opacity 0.15s;
-  }
-  .item-remove:hover { opacity: 1; }
-
-  /* Empty state */
-  .empty-state {
-    display: flex; flex-direction: column; align-items: center;
-    justify-content: center; height: 100%; color: #6c7086; gap: 8px;
-  }
-  .empty-state .icon { font-size: 40px; }
-  .empty-state div { font-size: 13px; }
-
-  /* Footer */
-  .panel-footer {
-    padding: 12px 16px; border-top: 1px solid #313244;
-    background: #1e1e2e;
-  }
-  .server-status {
-    display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
-    font-size: 12px;
-  }
-  .status-dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: #f38ba8; /* stopped */
-    animation: pulse 2s infinite;
-  }
-  .status-dot.running { background: #a6e3a1; }
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-  }
-
-  .btn {
-    padding: 7px 14px; border-radius: 4px; border: none;
-    font-size: 12px; cursor: pointer; font-weight: 500;
-    transition: background 0.15s;
-  }
-  .btn-primary {
-    background: #cba6f7; color: #1e1e2e; width: 100%;
-  }
-  .btn-primary:hover { background: #b4befe; }
-  .btn-danger {
-    background: transparent; color: #f38ba8; border: 1px solid #f38ba8;
-    margin-top: 6px; width: 100%;
-  }
-  .btn-danger:hover { background: rgba(243,139,168,0.1); }
-
-  /* Main content area */
-  .main-content {
-    flex: 1; background: #181825; border-radius: 8px;
-    padding: 24px; border: 1px solid #313244; overflow-y: auto;
-  }
-
-  /* Test results */
-  .test-section { margin-bottom: 24px; }
-  .test-section h2 {
-    font-size: 16px; margin-bottom: 12px; color: #cba6f7;
-    border-bottom: 1px solid #313244; padding-bottom: 8px;
-  }
-  .test-card {
-    background: #1e1e2e; border-radius: 6px; padding: 16px;
-    margin-bottom: 12px; border: 1px solid #313244;
-  }
-  .test-card h3 { font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
-  .badge {
-    font-size: 10px; padding: 2px 6px; border-radius: 3px; font-weight: 600;
-  }
-  .badge-pass { background: #a6e3a1; color: #1e1e2e; }
-  .badge-info { background: #89b4fa; color: #1e1e2e; }
-  pre {
-    background: #11111b; padding: 12px; border-radius: 4px;
-    font-size: 11px; overflow-x: auto; line-height: 1.5;
-    border: 1px solid #313244; max-height: 200px; overflow-y: auto;
-  }
-  .data-flow {
-    display: flex; align-items: center; gap: 12px; padding: 16px;
-    background: #1e1e2e; border-radius: 6px; flex-wrap: wrap;
-    margin-top: 16px;
-  }
-  .flow-step {
-    background: #313244; padding: 10px 16px; border-radius: 6px;
-    text-align: center; font-size: 12px; border: 1px solid #45475a;
-  }
-  .flow-arrow { color: #cba6f7; font-size: 20px; }
-  .flow-step.active { border-color: #cba6f7; background: #45475a; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1e1e2e; color: #cdd6f4; padding: 24px; display: flex; gap: 20px; height: 100vh; }
+  .sidebar { width: 320px; background: #181825; border-radius: 8px; border: 1px solid #313244; display: flex; flex-direction: column; overflow: hidden; }
+  .header { padding: 10px 14px; border-bottom: 1px solid #313244; display: flex; align-items: center; justify-content: space-between; }
+  .title { font-size: 14px; font-weight: 600; }
+  .count { font-size: 11px; background: #cba6f7; color: #1e1e2e; padding: 2px 8px; border-radius: 10px; font-weight: 700; }
+  .toolbar { display: flex; gap: 6px; padding: 6px 10px; border-bottom: 1px solid #313244; }
+  .search { flex:1; padding: 4px 8px; font-size: 11px; border: 1px solid #45475a; border-radius: 4px; background: #11111b; color: #cdd6f4; }
+  .sort-btn { padding: 2px 7px; font-size: 11px; border: 1px solid #45475a; border-radius: 3px; background: #313244; cursor: pointer; color: #a6adc8; }
+  .sort-btn.active { background: #cba6f7; color: #1e1e2e; border-color: #cba6f7; }
+  .drop-zone { flex:1; padding: 8px; overflow-y: auto; }
+  .group-header { display: flex; align-items: center; gap: 6px; padding: 6px 4px; margin-top: 8px; cursor: pointer; border-bottom: 1px solid #313244; }
+  .group-header:first-child { margin-top: 0; }
+  .group-toggle { font-size: 10px; color: #6c7086; width: 12px; }
+  .group-name { font-size: 12px; font-weight: 600; color: #a6adc8; flex:1; }
+  .group-count { font-size: 10px; color: #6c7086; background: #313244; padding: 0 6px; border-radius: 8px; }
+  .item { display: flex; align-items: center; gap: 6px; padding: 7px 10px; margin: 3px 0; border-radius: 6px; background: #313244; }
+  .item .priority { font-size: 11px; }
+  .item .icon { font-size: 14px; }
+  .item .name { flex:1; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item .tags { display: flex; gap: 3px; }
+  .item .tag { font-size: 9px; padding: 1px 4px; border-radius: 2px; background: #45475a; color: #a6adc8; }
+  .item .path { font-size: 10px; color: #585b70; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .remove { color: #f38ba8; cursor: pointer; opacity: 0; font-size: 14px; }
+  .item:hover .remove { opacity: 1; }
+  .footer { padding: 10px 14px; border-top: 1px solid #313244; display: flex; align-items: center; gap: 8px; font-size: 11px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #a6e3a1; }
+  .btn { padding: 4px 10px; font-size: 11px; border-radius: 4px; border: 1px solid #45475a; background: #313244; color: #cdd6f4; cursor: pointer; }
+  .btn.primary { background: #cba6f7; color: #1e1e2e; border-color: #cba6f7; }
+  .main { flex:1; display: flex; flex-direction: column; gap: 16px; }
+  .card { background: #181825; border-radius: 8px; padding: 20px; border: 1px solid #313244; }
+  .card h2 { font-size: 16px; margin-bottom: 12px; color: #cba6f7; }
+  .card h3 { font-size: 13px; margin: 12px 0 6px; color: #a6adc8; }
+  pre { background: #11111b; padding: 12px; border-radius: 4px; font-size: 11px; overflow-x: auto; border: 1px solid #313244; line-height: 1.6; }
+  .badge { font-size: 10px; padding: 2px 6px; border-radius: 3px; margin-right: 4px; }
+  .badge-ok { background: #a6e3a1; color: #1e1e2e; }
+  .badge-warn { background: #f9e2af; color: #1e1e2e; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th { text-align:left; padding:6px 8px; border-bottom:1px solid #313244; color:#a6adc8; }
+  td { padding:6px 8px; border-bottom:1px solid #1e1e2e; }
 </style>
 </head>
 <body>
 
-<!-- Obsidian Sidebar Mock -->
-<div class="obsidian-sidebar">
-  <div class="panel-header">
-    <span class="panel-title">🧠 AI 记忆面板</span>
-    <span class="panel-count">3</span>
+<div class="sidebar">
+  <div class="header">
+    <span class="title">🧠 AI 记忆面板</span>
+    <span class="count">3</span>
   </div>
 
-  <div class="drop-zone" id="dropZone">
-    <div class="memory-item">
-      <span class="item-icon">📝</span>
-      <div class="item-info">
-        <div class="item-name">AI项目开发规范</div>
-        <div class="item-path">/</div>
-      </div>
-      <span class="item-remove">×</span>
+  <div class="toolbar">
+    <input class="search" placeholder="搜索记忆..." type="text">
+    <button class="sort-btn">🕐</button>
+    <button class="sort-btn">🔤</button>
+    <button class="sort-btn active">⭐</button>
+    <button class="sort-btn">📂</button>
+  </div>
+
+  <div class="drop-zone">
+    <div class="group-header">
+      <span class="group-toggle">▼</span>
+      <span class="group-name">ai</span>
+      <span class="group-count">2</span>
     </div>
-    <div class="memory-item">
-      <span class="item-icon">📝</span>
-      <div class="item-info">
-        <div class="item-name">ClaudeCode配置</div>
-        <div class="item-path">/</div>
-      </div>
-      <span class="item-remove">×</span>
+    <div class="item">
+      <span class="priority" title="优先级: 关键">⭐</span>
+      <span class="icon">📝</span>
+      <span class="name">AI项目开发规范</span>
+      <span class="tags"><span class="tag">ai</span><span class="tag">开发规范</span></span>
+      <span class="path">/</span>
+      <span class="remove">×</span>
     </div>
-    <div class="memory-item">
-      <span class="item-icon">📝</span>
-      <div class="item-info">
-        <div class="item-name">项目架构设计</div>
-        <div class="item-path">/</div>
-      </div>
-      <span class="item-remove">×</span>
+    <div class="item">
+      <span class="icon">📝</span>
+      <span class="name">ClaudeCode配置</span>
+      <span class="tags"><span class="tag">ai</span></span>
+      <span class="path">/</span>
+      <span class="remove">×</span>
+    </div>
+
+    <div class="group-header">
+      <span class="group-toggle">▼</span>
+      <span class="group-name">未分类</span>
+      <span class="group-count">1</span>
+    </div>
+    <div class="item">
+      <span class="icon">📝</span>
+      <span class="name">项目架构设计</span>
+      <span class="path">/</span>
+      <span class="remove">×</span>
     </div>
   </div>
 
-  <div class="panel-footer">
-    <div class="server-status">
-      <span class="status-dot running"></span>
-      <span>MCP 运行中 :8315</span>
-    </div>
-    <button class="btn btn-primary" onclick="alert('MCP 服务器已连接!')">停止 MCP</button>
+  <div class="footer">
+    <span class="dot"></span>
+    <span>MCP 运行中 :8315</span>
+    <span style="flex:1"></span>
+    <button class="btn primary">停止 MCP</button>
+    <button class="btn">清空</button>
+    <button class="btn">📋 配置</button>
   </div>
 </div>
 
-<!-- Test Results -->
-<div class="main-content">
-  <h1 style="margin-bottom:20px;color:#cdd6f4;">AI Memory Bridge — MCP 测试报告</h1>
+<div class="main">
+  <div class="card">
+    <h2>AI Memory Bridge v0.3.0</h2>
+    <p style="margin-bottom:12px;">连接 Obsidian 笔记到 Claude Code 的 MCP 桥接插件。拖拽策展，TF-IDF 语义搜索，双向读写。</p>
 
-  <div class="test-section">
-    <h2>🔌 测试 1: MCP 初始化 (initialize)</h2>
-    <div class="test-card">
-      <h3><span class="badge badge-pass">✓ 通过</span> 协议握手成功</h3>
-      <pre>{
-  "protocolVersion": "2024-11-05",
-  "capabilities": { "tools": {} },
-  "serverInfo": {
-    "name": "ai-memory-bridge",
-    "version": "0.1.0"
+    <h3>📥 安装</h3>
+    <pre># 1. 拷贝插件到 vault
+cp -r ai-memory-bridge/ ~/YourVault/.obsidian/plugins/
+
+# 2. 在 Obsidian 设置 → 社区插件 → 启用 AI Memory Bridge
+
+# 3. 配置 Claude Code MCP
+# 在面板中点击 📋 配置 按钮复制 JSON，或手动添加：</pre>
+    <pre>{
+  "mcpServers": {
+    "ai-memory-bridge": {
+      "command": "node",
+      "args": ["mcp-bridge.js", "--vault", "/path/to/your/vault"]
+    }
   }
 }</pre>
-    </div>
-  </div>
 
-  <div class="test-section">
-    <h2>📋 测试 2: tools/list</h2>
-    <div class="test-card">
-      <h3><span class="badge badge-pass">✓ 通过</span> 注册了 3 个 MCP 工具</h3>
-      <pre>1. list_memories   — 列出所有 AI 记忆笔记
-2. get_memory      — 获取指定笔记完整内容
-3. search_memories — 搜索记忆关键词</pre>
-    </div>
-  </div>
+    <h3>🔧 5 个 MCP 工具</h3>
+    <table>
+      <tr><th>工具</th><th>功能</th><th>方向</th></tr>
+      <tr><td><b>list_memories</b></td><td>列出记忆 + tags + 优先级</td><td>Obsidian→Claude</td></tr>
+      <tr><td><b>get_memory</b></td><td>读笔记 + frontmatter + wikilink</td><td>Obsidian→Claude</td></tr>
+      <tr><td><b>search_memories</b></td><td>TF-IDF 语义搜索</td><td>Obsidian→Claude</td></tr>
+      <tr><td><b>write_memory</b></td><td>AI 写回笔记</td><td>Claude→Obsidian</td></tr>
+      <tr><td><b>delete_memory</b></td><td>移除记忆 (不删原文件)</td><td>Claude→Obsidian</td></tr>
+    </table>
 
-  <div class="test-section">
-    <h2>🧠 测试 3: list_memories</h2>
-    <div class="test-card">
-      <h3><span class="badge badge-pass">✓ 通过</span> vault=liu2, 共 3 条记忆</h3>
-      <pre>{
-  "vaultName": "liu2",
-  "totalCount": 3,
-  "memories": [
-    { "path": "AI项目开发规范.md", "name": "AI项目开发规范", "charCount": 213 },
-    { "path": "ClaudeCode配置.md",   "name": "ClaudeCode配置",   "charCount": 417 },
-    { "path": "项目架构设计.md",     "name": "项目架构设计",     "charCount": 303 }
-  ]
-}</pre>
-    </div>
-  </div>
+    <h3>🛡️ 安全</h3>
+    <p><span class="badge badge-ok">路径遍历拦截</span> <span class="badge badge-ok">512KB限制</span> <span class="badge badge-ok">删除确认门</span></p>
 
-  <div class="test-section">
-    <h2>📖 测试 4: get_memory</h2>
-    <div class="test-card">
-      <h3><span class="badge badge-pass">✓ 通过</span> 按名称查找 "AI项目开发规范"</h3>
-      <pre>{
-  "found": true,
-  "path": "AI项目开发规范.md",
-  "name": "AI项目开发规范",
-  "content": "---\ntags: [ai, 开发规范]\n---\n\n# AI 项目开发规范\n\n## 基本原则\n1. 先做只读体检，再决定下一步\n2. 技术选型只推荐一条主路线\n3. 实施前必须写实施真源文档\n4. 每阶段结束做 Git checkpoint\n\n## 常用命令\n- /项目体检 — 检查项目健康状态\n- /技术选型 — 评估并推荐技术栈\n- /质量验收 — 验证功能是否达标\n- /部署路线 — 上线前发布准备\n",
-  "charCount": 213
-}</pre>
-    </div>
-  </div>
-
-  <div class="test-section">
-    <h2>🔍 测试 5: search_memories</h2>
-    <div class="test-card">
-      <h3><span class="badge badge-pass">✓ 通过</span> 搜索 "MCP", 找到 2 条结果</h3>
-      <pre>{
-  "query": "MCP",
-  "resultCount": 2,
-  "results": [
-    {
-      "path": "ClaudeCode配置.md",
-      "name": "ClaudeCode配置",
-      "matchType": "content",
-      "snippet": "... # Claude Code MCP 配置 ## MCP 服务器配置位置 ..."
-    },
-    {
-      "path": "项目架构设计.md",
-      "name": "项目架构设计",
-      "matchType": "content",
-      "snippet": "... 桥接层: MCP Server (数据同步) ## 数据流 ..."
-    }
-  ]
-}</pre>
-    </div>
-  </div>
-
-  <div class="test-section">
-    <h2>🔄 数据流</h2>
-    <div class="data-flow">
-      <div class="flow-step active">📝 Obsidian 笔记</div>
-      <span class="flow-arrow">→</span>
-      <div class="flow-step active">🧠 Memory Panel (拖拽)</div>
-      <span class="flow-arrow">→</span>
-      <div class="flow-step active">💾 MemoryStore (plugin data)</div>
-      <span class="flow-arrow">→</span>
-      <div class="flow-step active">🌉 memory-bridge.json</div>
-      <span class="flow-arrow">→</span>
-      <div class="flow-step active">🔧 mcp-bridge.js</div>
-      <span class="flow-arrow">→</span>
-      <div class="flow-step active">🤖 Claude Code (MCP)</div>
+    <div style="margin-top:12px; padding:10px; background:#11111b; border-radius:4px; font-size:11px; color:#6c7086;">
+      ✅ TypeScript · ✅ esbuild · ✅ 13 tests · ✅ dev-docs · MIT License
     </div>
   </div>
 </div>
 
-<script>
-// Simulate drag-over effect
-const dropZone = document.getElementById('dropZone');
-dropZone.addEventListener('dragover', (e) => {
-  e.preventDefault();
-  dropZone.classList.add('drag-over');
-});
-dropZone.addEventListener('dragleave', () => {
-  dropZone.classList.remove('drag-over');
-});
-dropZone.addEventListener('drop', (e) => {
-  e.preventDefault();
-  dropZone.classList.remove('drag-over');
-  alert('📝 文件已拖入！在真实 Obsidian 中会触发 MemoryStore.addMemory()');
-});
-</script>
 </body>
 </html>
