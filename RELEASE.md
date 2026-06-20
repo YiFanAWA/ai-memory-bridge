@@ -14,7 +14,7 @@
 #### 1. 推送到 GitHub
 
 ```bash
-git remote add origin https://github.com/你的用户名/ai-memory-bridge.git
+git remote add origin https://github.com/YiFanAWA/ai-memory-bridge.git
 git push -u origin master
 ```
 
@@ -46,9 +46,9 @@ Fork https://github.com/obsidianmd/obsidian-releases
 {
   "id": "ai-memory-bridge",
   "name": "AI Memory Bridge",
-  "author": "你的用户名",
+  "author": "YiFanAWA",
   "description": "Connect Obsidian as AI memory for Claude Code via MCP. Drag-drop panel, TF-IDF search, bidirectional read/write.",
-  "repo": "你的用户名/ai-memory-bridge"
+  "repo": "YiFanAWA/ai-memory-bridge"
 }
 ```
 
