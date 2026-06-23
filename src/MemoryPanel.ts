@@ -8,6 +8,7 @@ import {
   Notice,
 } from "obsidian";
 import { MemoryStore, MemoryItem } from "./MemoryStore";
+import { getVaultBasePath } from "./utils";
 
 export const VIEW_TYPE_MEMORY_PANEL = "ai-memory-bridge-panel";
 
@@ -33,6 +34,7 @@ export class MemoryPanel extends ItemView {
   private dropHandler: ((e: DragEvent) => void) | null = null;
   private toggleBtnClickHandler: (() => void) | null = null;
   private clearBtnClickHandler: (() => Promise<void>) | null = null;
+  private clearBtn: HTMLElement | null = null;
 
   constructor(leaf: WorkspaceLeaf, store: MemoryStore, vault: Vault) {
     super(leaf);
@@ -106,7 +108,7 @@ export class MemoryPanel extends ItemView {
     };
     toggleBtn.addEventListener("click", this.toggleBtnClickHandler);
 
-    const clearBtn = actions.createEl("button", {
+    this.clearBtn = actions.createEl("button", {
       cls: "ai-memory-btn",
       text: "清空",
     });
@@ -114,7 +116,7 @@ export class MemoryPanel extends ItemView {
       await this.store.clearAll();
       this.renderDropZone();
     };
-    clearBtn.addEventListener("click", this.clearBtnClickHandler);
+    this.clearBtn.addEventListener("click", this.clearBtnClickHandler);
 
     // Copy MCP config button
     const copyBtn = actions.createEl("button", {
@@ -150,10 +152,10 @@ export class MemoryPanel extends ItemView {
       toggleBtn.removeEventListener("click", this.toggleBtnClickHandler);
       this.toggleBtnClickHandler = null;
     }
-    const clearBtn = this.containerEl.querySelector(".ai-memory-btn:not(.primary)");
-    if (clearBtn && this.clearBtnClickHandler) {
-      clearBtn.removeEventListener("click", this.clearBtnClickHandler as any);
+    if (this.clearBtn && this.clearBtnClickHandler) {
+      this.clearBtn.removeEventListener("click", this.clearBtnClickHandler as any);
       this.clearBtnClickHandler = null;
+      this.clearBtn = null;
     }
 
     this.dropZone = null;
@@ -429,9 +431,7 @@ export class MemoryPanel extends ItemView {
    * Copy the MCP config JSON to clipboard.
    */
   private async copyMCPConfig(): Promise<void> {
-    const vaultPath = (this.app.vault.adapter as any)?.getBasePath?.()
-      ?? (this.app.vault.adapter as any)?.basePath
-      ?? "你的vault路径";
+    const vaultPath = getVaultBasePath(this.app.vault) || "你的vault路径";
 
     const config = {
       mcpServers: {

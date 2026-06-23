@@ -29,6 +29,10 @@ export default class AIMemoryBridgePlugin extends Plugin {
 
     // Initialize Bridge Sync
     const vaultBasePath = getVaultBasePath(this.app.vault);
+    if (!vaultBasePath) {
+      console.error("AI Memory Bridge: Vault not backed by filesystem. Plugin requires desktop Obsidian.");
+      // Bridge sync disabled — MCP server won't have data to serve
+    }
     const pluginDataDir = vaultBasePath
       ? `${vaultBasePath}/.obsidian/ai-memory-bridge`
       : "";

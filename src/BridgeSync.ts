@@ -18,6 +18,10 @@ export class BridgeSync {
   private running: boolean = false;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly DEBOUNCE_MS = 500;
+  // Auto-discovery cache to avoid scanning entire vault on every sync
+  private autoDiscoveryCache: Partial<MemoryItem>[] | null = null;
+  private autoDiscoveryLastScan: number = 0;
+  private readonly AUTO_DISCOVERY_INTERVAL_MS = 5 * 60 * 1000; // Rescan every 5 minutes
 
   constructor(store: MemoryStore, vault: Vault, pluginDataDir: string) {
     this.store = store;
@@ -74,6 +78,8 @@ export class BridgeSync {
    */
   async syncNow(): Promise<void> {
     if (!this.running) return;
+    // Force rescan of auto-discovered memories on explicit sync
+    this.autoDiscoveryCache = null;
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
@@ -87,8 +93,13 @@ export class BridgeSync {
   private async writeBridgeFile(): Promise<void> {
     const items = this.store.items;
 
-    // Auto-discover notes
-    const autoItems = await this.discoverAutoMemories();
+    // Auto-discover notes (cached, rescans every 5 minutes)
+    const now = Date.now();
+    if (!this.autoDiscoveryCache || (now - this.autoDiscoveryLastScan) > this.AUTO_DISCOVERY_INTERVAL_MS) {
+      this.autoDiscoveryCache = await this.discoverAutoMemories();
+      this.autoDiscoveryLastScan = now;
+    }
+    const autoItems = this.autoDiscoveryCache;
     const allItems = this.mergeItems(items, autoItems);
 
     // Read existing bridge file to preserve pending writes
@@ -141,7 +152,10 @@ export class BridgeSync {
       if (!fs.existsSync(this.pluginDataDir)) {
         fs.mkdirSync(this.pluginDataDir, { recursive: true });
       }
-      await fs.promises.writeFile(bridgeFile, JSON.stringify(bridgeData, null, 2), "utf-8");
+      // Atomic write: temp file + rename to prevent corruption from concurrent access
+      const tmpPath = bridgeFile + ".tmp." + Date.now();
+      await fs.promises.writeFile(tmpPath, JSON.stringify(bridgeData, null, 2), { encoding: "utf-8", mode: 0o600 });
+      await fs.promises.rename(tmpPath, bridgeFile);
       if (processedIds.length > 0) {
         new Notice(`已处理 ${processedIds.length} 条 AI 写入请求`);
       }

@@ -103,7 +103,7 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-# Test empty query validation
+# Test empty query validation — handler-level check (no required fields in schema for search)
 RESULT=$(call_tool 108 "search_memories" '{}')
 HAS_ERROR=$(echo "$RESULT" | python3 -c "import sys,json; r=json.load(sys.stdin); d=json.loads(r['result']['content'][0]['text']); print(1 if 'error' in d else 0)" 2>/dev/null)
 check "empty query validation" "$HAS_ERROR" "1"
@@ -115,9 +115,9 @@ RESULT=$(call_tool 104 "write_memory" '{"name":"回归测试","content":"自动�
 WRITE_OK=$(echo "$RESULT" | grep -c '"jsonrpc":"2.0"' || echo 0)
 check "write returns valid JSON-RPC" "$WRITE_OK" "1"
 
-# Test empty name validation
+# Test empty name validation (now caught by schema validation with -32602 error code)
 RESULT=$(call_tool 109 "write_memory" '{"name":"","content":"test"}')
-HAS_ERR=$(echo "$RESULT" | grep -c '请提供有效的 name' || echo 0)
+HAS_ERR=$(echo "$RESULT" | grep -c '\-32602' || echo 0)
 check "empty name validation" "$HAS_ERR" "1"
 
 # ─── 5. Security ────────────────────────────────────────────────────

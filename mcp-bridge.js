@@ -22,6 +22,7 @@ const SERVER_VERSION = "0.2.0";
 const MAX_FILE_SIZE = 512 * 1024; // 512KB max per file
 const MAX_SEARCH_RESULTS = 50;
 const MAX_SNIPPET_LEN = 120;
+const MAX_QUERY_LENGTH = 4096; // Prevent resource exhaustion from oversized search queries
 
 // Parse CLI args
 let vaultPath = null;
@@ -38,26 +39,35 @@ for (let i = 2; i < process.argv.length; i++) {
  */
 function isPathSafe(filePath) {
   if (!filePath || typeof filePath !== "string") return false;
-  // Block path traversal attempts
-  if (filePath.includes("..")) return false;
-  if (filePath.includes("~")) return false;
+  // Block path traversal attempts (normalize first to catch encoded variants)
+  if (path.normalize(filePath).includes("..")) return false;
   // Block absolute paths (only vault-relative paths allowed)
   if (path.isAbsolute(filePath)) return false;
-  // Block null bytes and other dangerous characters
+  // Block null bytes and other dangerous control characters
   if (/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(filePath)) return false;
   return true;
 }
 
 /**
  * Resolve a vault-relative path to an absolute filesystem path.
+ * Uses realpathSync to defend against symlink traversal attacks.
  */
 function resolveVaultPath(relativePath) {
   if (!vaultPath) return null;
   if (!isPathSafe(relativePath)) return null;
-  const resolved = path.resolve(vaultPath, relativePath);
-  // Ensure resolved path is still inside vault
-  if (!resolved.startsWith(path.resolve(vaultPath))) return null;
-  return resolved;
+  const vaultRoot = path.resolve(vaultPath);
+  const resolved = path.resolve(vaultRoot, relativePath);
+  // Lexical check: ensure path is still inside vault
+  if (!resolved.startsWith(vaultRoot)) return null;
+  // Filesystem check: resolve symlinks and verify real path stays inside vault
+  try {
+    const realPath = fs.realpathSync(resolved);
+    if (!realPath.startsWith(vaultRoot)) return null;
+    return realPath;
+  } catch (_) {
+    // File doesn't exist or can't be resolved — fall back to lexical result
+    return resolved;
+  }
 }
 
 // ─── Bridge File ─────────────────────────────────────────────────────────────
@@ -67,6 +77,16 @@ function getBridgeFilePath() {
     return path.join(vaultPath, ".obsidian", "ai-memory-bridge", "memory-bridge.json");
   }
   return path.join(process.cwd(), ".obsidian", "ai-memory-bridge", "memory-bridge.json");
+}
+
+/**
+ * Atomically write JSON to a file (temp file + rename) to prevent
+ * corruption from concurrent reads and partial writes.
+ */
+function atomicWriteFileSync(filePath, data) {
+  const tmpPath = filePath + ".tmp." + process.pid + "." + Date.now();
+  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), "utf-8");
+  fs.renameSync(tmpPath, filePath);
 }
 
 // Bridge index cache
@@ -138,12 +158,23 @@ function readVaultFile(relativePath) {
     contentCache.set(relativePath, entry);
     return entry;
   } catch (err) {
-    return { content: `[读取错误: ${err.message}]`, wikilinks: [], frontmatter: {} };
+    // Sanitize error — Node.js errors include full absolute paths
+    const msg = err.message ? err.message.replace(vaultPath || "", "[vault]") : "未知错误";
+    return { content: `[读取错误: ${msg}]`, wikilinks: [], frontmatter: {} };
   }
 }
 
+// Sensitive frontmatter keys that must be redacted before sending to AI models
+const SENSITIVE_FRONTMATTER_KEYS = new Set([
+  "api_key", "apikey", "api_secret", "apisecret",
+  "token", "access_token", "secret", "password", "passwd",
+  "private_key", "privatekey", "auth", "authorization",
+  "credential", "credentials", "ssh_key", "pgp_key",
+]);
+
 /**
  * Parse frontmatter and wikilinks from markdown content.
+ * Sensitive keys (API tokens, secrets, passwords) are redacted.
  */
 function parseMarkdown(raw) {
   const result = { frontmatter: {}, wikilinks: [] };
@@ -158,6 +189,11 @@ function parseMarkdown(raw) {
         if (colonIdx > 0) {
           const key = line.slice(0, colonIdx).trim();
           let value = line.slice(colonIdx + 1).trim();
+          // Redact sensitive keys
+          if (SENSITIVE_FRONTMATTER_KEYS.has(key.toLowerCase())) {
+            result.frontmatter[key] = "[已隐藏]";
+            continue;
+          }
           // Parse YAML list: [a, b, c]
           if (value.startsWith("[") && value.endsWith("]")) {
             value = value.slice(1, -1).split(",").map(s => s.trim().replace(/^["']|["']$/g, ""));
@@ -461,6 +497,9 @@ function handleSearchMemories(args) {
   if (!query || typeof query !== "string" || query.trim().length === 0) {
     return { error: "请提供 query 或 q 搜索参数" };
   }
+  if (query.length > MAX_QUERY_LENGTH) {
+    return { error: `搜索关键词过长 (${query.length}字符)，最大 ${MAX_QUERY_LENGTH} 字符` };
+  }
 
   const searchMode = args.mode || "semantic"; // "semantic" | "keyword" | "both"
 
@@ -559,7 +598,7 @@ function handleWriteMemory(args) {
   const bridgeFile = getBridgeFilePath();
   try {
     const updatedData = { ...data, pendingWrites };
-    fs.writeFileSync(bridgeFile, JSON.stringify(updatedData, null, 2), "utf-8");
+    atomicWriteFileSync(bridgeFile, updatedData);
     invalidateBridgeCache();
     return {
       success: true,
@@ -607,7 +646,7 @@ function handleDeleteMemory(args) {
 
   const bridgeFile = getBridgeFilePath();
   try {
-    fs.writeFileSync(bridgeFile, JSON.stringify(data, null, 2), "utf-8");
+    atomicWriteFileSync(bridgeFile, data);
     invalidateBridgeCache();
     return {
       success: true,
@@ -626,8 +665,12 @@ function handleDeleteMemory(args) {
 function handleRequest(request) {
   const { id, method, params } = request;
 
+  // JSON-RPC 2.0: Notifications (messages without an id) MUST NOT receive a response
+  const isNotification = id === undefined || id === null;
+
   switch (method) {
     case "initialize":
+      if (isNotification) return;
       return sendResponse(id, {
         protocolVersion: "2024-11-05",
         capabilities: { tools: {} },
@@ -635,15 +678,19 @@ function handleRequest(request) {
       });
 
     case "tools/list":
+      if (isNotification) return;
       return sendResponse(id, { tools: getToolDefinitions() });
 
     case "tools/call":
+      if (isNotification) return;
       return handleToolCall(id, params);
 
     case "notifications/initialized":
+      // Notification — no response expected
       break;
 
     default:
+      if (isNotification) return;
       return sendError(id, -32601, `Method not found: ${method}`);
   }
 }
@@ -715,7 +762,22 @@ function getToolDefinitions() {
 
 function handleToolCall(id, params) {
   const { name, arguments: args } = params || {};
+  // Validate that arguments is an object (MCP spec requirement)
+  if (args !== undefined && (typeof args !== "object" || Array.isArray(args) || args === null)) {
+    return sendError(id, -32602, `Invalid params: arguments must be an object, got ${typeof args}`);
+  }
   const safeArgs = (args && typeof args === "object" && !Array.isArray(args)) ? args : {};
+
+  // Validate required fields against inputSchema
+  const toolDef = getToolDefinitions().find(t => t.name === name);
+  if (toolDef && toolDef.inputSchema && toolDef.inputSchema.required) {
+    for (const requiredField of toolDef.inputSchema.required) {
+      if (safeArgs[requiredField] === undefined || safeArgs[requiredField] === null || safeArgs[requiredField] === "") {
+        return sendError(id, -32602, `Missing required parameter: ${requiredField}`);
+      }
+    }
+  }
+
   let result;
 
   try {

@@ -1,5 +1,6 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type AIMemoryBridgePlugin from "../main";
+import { getVaultBasePath } from "./utils";
 
 export class AIMemoryBridgeSettingTab extends PluginSettingTab {
   private plugin: AIMemoryBridgePlugin;
@@ -18,7 +19,7 @@ export class AIMemoryBridgeSettingTab extends PluginSettingTab {
     // MCP Port
     new Setting(containerEl)
       .setName("MCP 端口")
-      .setDesc("MCP Bridge 数据文件的存放位置。默认为插件数据目录。")
+      .setDesc("MCP Bridge 端口号。0 为自动分配，默认留空即可。")
       .addText((text) =>
         text
           .setPlaceholder("自动")
@@ -61,9 +62,7 @@ export class AIMemoryBridgeSettingTab extends PluginSettingTab {
       text: "将以下内容添加到 Claude Code 的 MCP 配置中以连接此插件：",
     });
 
-    const vaultPath = (this.app.vault.adapter as any)?.getBasePath?.()
-      ?? (this.app.vault.adapter as any)?.basePath
-      ?? "你的 vault 路径";
+    const vaultPath = getVaultBasePath(this.app.vault) || "你的 vault 路径";
     const scriptPath =
       this.plugin.getBridgeScriptPath() || "mcp-bridge.js";
 

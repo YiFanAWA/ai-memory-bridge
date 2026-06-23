@@ -76,7 +76,7 @@ export class MemoryStore {
 
   set mcpPort(port: number) {
     this.data.mcpPort = port;
-    void this.saveCallback();
+    void this.safeSave();
   }
 
   get mcpAutoStart(): boolean {
@@ -85,7 +85,7 @@ export class MemoryStore {
 
   set mcpAutoStart(auto: boolean) {
     this.data.mcpAutoStart = auto;
-    void this.saveCallback();
+    void this.safeSave();
   }
 
   /**
@@ -134,7 +134,7 @@ export class MemoryStore {
     }
 
     if (added.length > 0) {
-      await this.saveCallback();
+      await this.safeSave();
     }
     return added;
   }
@@ -175,21 +175,23 @@ export class MemoryStore {
    * Remove a memory item by path.
    */
   async removeMemory(path: string): Promise<boolean> {
-    const idx = this.data.items.findIndex((i) => i.path === path);
-    if (idx === -1) return false;
+    const before = this.data.items.length;
+    const item = this.data.items.find((i) => i.path === path);
+    if (!item) return false;
 
-    // If it's a folder, also remove all child items.
-    // Use trailing "/" to ensure exact directory prefix match
-    // (e.g., "notes/" matches "notes/sub.md" but NOT "notes-extra.md").
-    const item = this.data.items[idx];
     if (item.isFolder) {
+      // Also remove all child items inside the folder.
+      // Use trailing "/" to ensure exact directory prefix match
+      // (e.g., "notes/" matches "notes/sub.md" but NOT "notes-extra.md").
       const dirPrefix = item.path.endsWith("/") ? item.path : item.path + "/";
       this.data.items = this.data.items.filter(
-        (i) => !i.path.startsWith(dirPrefix)
+        (i) => i.path !== path && !i.path.startsWith(dirPrefix)
       );
+    } else {
+      this.data.items = this.data.items.filter((i) => i.path !== path);
     }
 
-    this.data.items.splice(idx, 1);
+    if (this.data.items.length === before) return false;
     await this.saveCallback();
     return true;
   }
@@ -306,9 +308,22 @@ export class MemoryStore {
 
   /**
    * Set memory priority (0=normal, 1=important, 2=critical).
+   * Clamps to valid range.
    */
   async setPriority(path: string, priority: number): Promise<boolean> {
-    return this.updateItem(path, { priority });
+    return this.updateItem(path, { priority: Math.max(0, Math.min(2, priority)) });
+  }
+
+  /**
+   * Safely persist data with error handling.
+   * Replaces bare `void this.saveCallback()` calls throughout the class.
+   */
+  private async safeSave(): Promise<void> {
+    try {
+      await this.saveCallback();
+    } catch (err) {
+      console.error("AI Memory Bridge: Failed to save memory data:", err);
+    }
   }
 
   /**

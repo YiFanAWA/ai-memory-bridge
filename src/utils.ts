@@ -13,8 +13,22 @@ export function getVaultBasePath(vault: Vault): string {
 }
 
 /**
+ * Sensitive frontmatter keys that must be redacted before sending to AI models.
+ * Keep in sync with SENSITIVE_FRONTMATTER_KEYS in mcp-bridge.js.
+ */
+const SENSITIVE_FRONTMATTER_KEYS = new Set([
+  "api_key", "apikey", "api_secret", "apisecret",
+  "token", "access_token", "secret", "password", "passwd",
+  "private_key", "privatekey", "auth", "authorization",
+  "credential", "credentials", "ssh_key", "pgp_key",
+]);
+
+/**
  * Parse YAML-like frontmatter from markdown content.
  * Returns key-value pairs. Handles simple lists [a, b, c].
+ * Sensitive keys (API tokens, secrets, passwords) are redacted.
+ *
+ * NOTE: Keep in sync with parseMarkdown() in mcp-bridge.js.
  */
 export function parseFrontmatter(content: string): Record<string, any> {
   const result: Record<string, any> = {};
@@ -28,6 +42,13 @@ export function parseFrontmatter(content: string): Record<string, any> {
     const colonIdx = line.indexOf(":");
     if (colonIdx <= 0) continue;
     const key = line.slice(0, colonIdx).trim();
+
+    // Redact sensitive keys before they enter any AI context
+    if (SENSITIVE_FRONTMATTER_KEYS.has(key.toLowerCase())) {
+      result[key] = "[已隐藏]";
+      continue;
+    }
+
     let value: any = line.slice(colonIdx + 1).trim();
 
     // Parse list: [a, b, c]
@@ -59,8 +80,9 @@ export function parseWikilinks(content: string): string[] {
 }
 
 /**
- * MCP tool definitions — single source of truth.
- * Used by both BridgeSync (documentation) and mcp-bridge.js (tools/list).
+ * MCP tool definitions — shared reference.
+ * NOTE: The authoritative inputSchema definitions live in mcp-bridge.js getToolDefinitions().
+ * When adding/renaming tools, update BOTH locations. Long-term: extract to shared .json file.
  */
 export const MCP_TOOL_DEFINITIONS = [
   {
