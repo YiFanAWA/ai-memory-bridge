@@ -8,6 +8,7 @@ dist/
 # Build artifacts
 *.tgz
 *.tar.gz
+ai-memory-bridge-*.zip
 
 # IDE
 .idea/
