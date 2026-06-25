@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf } from "obsidian";
+import { Menu, Notice, Plugin, TFolder, WorkspaceLeaf } from "obsidian";
 import { MemoryPanel, VIEW_TYPE_MEMORY_PANEL } from "./src/MemoryPanel";
 import { MemoryStore, MemoryStoreData } from "./src/MemoryStore";
 import { BridgeSync } from "./src/BridgeSync";

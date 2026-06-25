@@ -1,11 +1,16 @@
 #!/usr/bin/env node
 
 /**
- * AI Memory Bridge - MCP Server v0.2.0
+ * AI Memory Bridge - MCP Server v0.3.1
  *
  * Reads memory index from Obsidian plugin, serves content directly from
  * vault .md files (always fresh). Includes TF-IDF semantic search,
  * wikilink extraction, and security validators.
+ *
+ * Version note: SERVER_VERSION is the product version. The bridge file's
+ * `version` field (currently "0.3.0", written by BridgeSync.ts) is the
+ * bridge file format version. The two are decoupled to avoid false
+ * compatibility alarms.
  *
  * Usage:
  *   node mcp-bridge.js --vault "/path/to/obsidian/vault"
@@ -18,7 +23,7 @@ const readline = require("readline");
 // ─── Configuration ───────────────────────────────────────────────────────────
 
 const SERVER_NAME = "ai-memory-bridge";
-const SERVER_VERSION = "0.2.0";
+const SERVER_VERSION = "0.4.0";
 const MAX_FILE_SIZE = 512 * 1024; // 512KB max per file
 const MAX_SEARCH_RESULTS = 50;
 const MAX_SNIPPET_LEN = 120;
@@ -478,6 +483,20 @@ function handleGetMemory(args) {
 
   // Read live content
   const file = readVaultFile(match.path);
+
+  // Append accessLog (best-effort, must not block main flow)
+  try {
+    const bridgeFile = getBridgeFilePath();
+    const raw = fs.readFileSync(bridgeFile, "utf-8");
+    const bridgeData = JSON.parse(raw);
+    bridgeData.accessLog = bridgeData.accessLog || [];
+    bridgeData.accessLog.push({ path: match.path, timestamp: Date.now() });
+    atomicWriteFileSync(bridgeFile, bridgeData);
+    invalidateBridgeCache();
+  } catch (err) {
+    console.error("[AI Memory Bridge] Failed to append accessLog:", err);
+  }
+
   return {
     found: true, matchType,
     path: match.path, name: match.name,
@@ -641,19 +660,25 @@ function handleDeleteMemory(args) {
     };
   }
 
-  const removed = memories.splice(idx, 1)[0];
-  data.memoryCount = memories.length;
+  const removed = memories[idx];
+  const pendingDeletes = data.pendingDeletes || [];
+  pendingDeletes.push({
+    id: "del_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
+    path: targetPath,
+    status: "pending",
+    timestamp: new Date().toISOString(),
+  });
 
   const bridgeFile = getBridgeFilePath();
   try {
-    atomicWriteFileSync(bridgeFile, data);
+    atomicWriteFileSync(bridgeFile, { ...data, pendingDeletes });
     invalidateBridgeCache();
     return {
       success: true,
       message: `已移除记忆: ${removed.name}`,
       removed: { path: removed.path, name: removed.name },
       remainingCount: memories.length,
-      note: "笔记文件未被删除，仅从 AI 记忆列表中移除。",
+      note: "删除请求已排队，下次 Obsidian 同步生效。笔记文件未被删除，仅从 AI 记忆列表中移除。",
     };
   } catch (err) {
     return { error: `删除失败: ${err.message}` };

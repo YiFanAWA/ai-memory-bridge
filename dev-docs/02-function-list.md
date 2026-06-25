@@ -1,4 +1,4 @@
-# 功能清单 (Function List) — v0.3.0
+# 功能清单 (Function List) — v0.4.0
 
 ## MCP 工具层 (mcp-bridge.js)
 
@@ -27,6 +27,8 @@
 | F19 | 首次使用引导 | ✅ done | 空面板 3 步教程 + ai_memory:true 提示 |
 | F20 | 按 tags 分组 | ✅ done | 📂 按钮折叠分组，未分类归入"未分类" |
 | F21 | 记忆⭐优先级 | ✅ done | MemoryItem.priority + panel 显示 + sort |
+| F34 | 最近使用记录 | ✅ done | MemoryItem.lastAccessedAt + bridge accessLog + 📊 排序按钮 |
+| F35 | 批量导入文件夹（右键菜单） | ✅ done | main.ts workspace.on("file-menu") + TFolder 守卫 |
 
 ## 框架层 (src/)
 
@@ -59,8 +61,6 @@
 
 | ID | 功能 | 优先级 |
 |----|------|--------|
-| F34 | 最近使用记录 | 🟡 P2 |
-| F35 | 批量导入（右键文件夹） | 🟡 P2 |
 | F36 | Git 版本化记忆 | 🔴 P3 |
 | F37 | 多 vault 支持 | 🔴 P3 |
 | F38 | 技能/Skills 系统 | 🔴 P3 |

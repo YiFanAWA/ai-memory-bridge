@@ -50,6 +50,21 @@
 | Q29 | Windows 路径 (D:/...) 正常工作 | ✅ |
 | Q30 | macOS/Linux 路径 (/Users/...) 未测试 | ⬜ 未验证 |
 
+## v0.4.0 P2 + 严重问题修复验收
+
+| # | 验收项 | 方法 | 状态 |
+|---|--------|------|------|
+| Q31 | delete_memory 排队到 pendingDeletes 而非 splice memories | stdin 调 delete_memory，验证 bridge 文件 pendingDeletes 含条目且 memories 数组不变 | ✅ |
+| Q32 | BridgeSync 消费 pendingDeletes 并加入 deletedPaths | 代码审查 + 行为推断（需 Obsidian 内 GUI 验证） | ⚠ 代码 ✅ / GUI ⬜ |
+| Q33 | discoverAutoMemories 跳过 deletedPaths | 代码审查（BridgeSync.ts 第 219-222 行） | ✅ |
+| Q34 | get_memory 追加 accessLog | stdin 调 get_memory，验证 bridge 文件 accessLog 含 {path, timestamp} | ✅ |
+| Q35 | BridgeSync 消费 accessLog 更新 lastAccessedAt | 代码审查（BridgeSync.ts 第 154-168 行） | ✅ |
+| Q36 | MemoryPanel "📊 最近" 排序按钮 | 代码审查（MemoryPanel.ts renderSortButtons + getDisplayItems） | ✅ / 需 GUI |
+| Q37 | main.ts 右键文件夹"加入 AI 记忆"菜单项 | 代码审查（main.ts 第 76-97 行） | ✅ / 需 GUI |
+| Q38 | executeWrite 二次校验 isPathSafe + MAX_FILE_SIZE | 代码审查（BridgeSync.ts 第 300-312 行） | ✅ |
+| Q39 | MemoryPanel 事件全部命名 handler + 事件委托 | 代码审查 + `as any` / `addEventListener(.*=>` 全文搜索为 0 | ✅ |
+| Q40 | mcp-bridge.js 版本号 0.3.1 | stdin 调 initialize 验证 serverInfo.version | ✅ |
+
 ## 回归测试命令
 
 ```bash

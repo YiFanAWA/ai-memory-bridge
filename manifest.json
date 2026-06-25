@@ -1,7 +1,7 @@
 {
   "id": "ai-memory-bridge",
   "name": "AI Memory Bridge",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "minAppVersion": "1.5.0",
   "description": "Connect Obsidian notes as AI memory for Claude Code via MCP. Drag & drop notes into a visual panel with TF-IDF semantic search and bidirectional read/write.",
   "author": "YiFanAWA",

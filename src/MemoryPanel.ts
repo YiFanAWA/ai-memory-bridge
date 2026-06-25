@@ -15,26 +15,36 @@ export const VIEW_TYPE_MEMORY_PANEL = "ai-memory-bridge-panel";
 export class MemoryPanel extends ItemView {
   private store: MemoryStore;
   private vault: Vault;
-  private dropZone: HTMLElement | null = null;
-  private serverStatusDot: HTMLElement | null = null;
-  private serverStatusText: HTMLElement | null = null;
-  private countEl: HTMLElement | null = null;
 
   // View state — decoupled from rendering logic
   private searchQuery: string = "";
-  private sortKey: "name" | "time" | "priority" = "time";
+  private sortKey: "name" | "time" | "priority" | "recent" = "time";
   private groupBy: "none" | "tags" = "none";
 
   // Callback to notify main plugin of MCP server toggle
   private onToggleServer: (() => void) | null = null;
+
+  // DOM references for cleanup
+  private dropZone: HTMLElement | null = null;
+  private serverStatusDot: HTMLElement | null = null;
+  private serverStatusText: HTMLElement | null = null;
+  private countEl: HTMLElement | null = null;
+  private clearBtn: HTMLElement | null = null;
+  private searchInput: HTMLInputElement | null = null;
+  private copyBtn: HTMLButtonElement | null = null;
+  private toolbar: HTMLElement | null = null;
 
   // Store event listener references for cleanup
   private dragoverHandler: ((e: DragEvent) => void) | null = null;
   private dragleaveHandler: ((e: DragEvent) => void) | null = null;
   private dropHandler: ((e: DragEvent) => void) | null = null;
   private toggleBtnClickHandler: (() => void) | null = null;
-  private clearBtnClickHandler: (() => Promise<void>) | null = null;
-  private clearBtn: HTMLElement | null = null;
+  private clearBtnClickHandler: ((e: MouseEvent) => void) | null = null;
+  private searchInputHandler: ((e: Event) => void) | null = null;
+  private copyBtnClickHandler: (() => void) | null = null;
+  private toolbarClickHandler: ((e: MouseEvent) => void) | null = null;
+  private dropZoneClickHandler: ((e: MouseEvent) => void) | null = null;
+  private dropZoneContextmenuHandler: ((e: MouseEvent) => void) | null = null;
 
   constructor(leaf: WorkspaceLeaf, store: MemoryStore, vault: Vault) {
     super(leaf);
@@ -68,20 +78,38 @@ export class MemoryPanel extends ItemView {
     header.createSpan({ cls: "ai-memory-panel-title", text: "🧠 AI 记忆面板" });
     this.countEl = header.createSpan({ cls: "ai-memory-panel-count", text: "0" });
 
-    // Toolbar: search + sort
-    const toolbar = container.createDiv("ai-memory-toolbar");
-    const searchInput = toolbar.createEl("input", {
+    // Toolbar: search + sort (event delegation for sort buttons)
+    this.toolbar = container.createDiv("ai-memory-toolbar");
+    const searchInput = this.toolbar.createEl("input", {
       type: "text",
       placeholder: "搜索记忆...",
       cls: "ai-memory-search-input",
     });
-    searchInput.addEventListener("input", () => {
-      this.searchQuery = searchInput.value;
+    this.searchInput = searchInput;
+    this.searchInputHandler = (e: Event) => {
+      this.searchQuery = (e.target as HTMLInputElement).value;
       this.renderDropZone();
-    });
+    };
+    searchInput.addEventListener("input", this.searchInputHandler);
 
-    // Sort buttons
-    const sortGroup = toolbar.createDiv("ai-memory-sort-group");
+    // Sort buttons container (click handled via toolbar delegation)
+    const sortGroup = this.toolbar.createDiv("ai-memory-sort-group");
+    this.toolbarClickHandler = (e: MouseEvent) => {
+      const btn = (e.target as HTMLElement).closest(".ai-memory-sort-btn");
+      if (!btn) return;
+      const key = btn.getAttribute("data-sort-key");
+      const group = btn.getAttribute("data-group-toggle");
+      if (key) {
+        this.sortKey = key as typeof this.sortKey;
+        this.renderSortButtons(sortGroup);
+        this.renderDropZone();
+      } else if (group === "tags") {
+        this.groupBy = this.groupBy === "tags" ? "none" : "tags";
+        this.renderSortButtons(sortGroup);
+        this.renderDropZone();
+      }
+    };
+    this.toolbar.addEventListener("click", this.toolbarClickHandler);
     this.renderSortButtons(sortGroup);
 
     // Drop zone
@@ -90,6 +118,110 @@ export class MemoryPanel extends ItemView {
 
     // Setup drag events
     this.setupDragEvents();
+
+    // Event delegation on dropZone for item clicks, contextmenu, remove buttons,
+    // and group header collapse. Avoids per-item listeners (AGENTS.md 禁止模式).
+    this.dropZoneClickHandler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // Remove button takes priority
+      if (target.classList.contains("ai-memory-item-remove")) {
+        e.stopPropagation();
+        const path = target.closest("[data-item-path]")?.getAttribute("data-item-path");
+        if (path) {
+          const item = this.store.items.find((i) => i.path === path);
+          if (item) {
+            void this.store
+              .removeMemory(path)
+              .then(() => {
+                this.renderDropZone();
+                new Notice(`已移除: ${item.name}`);
+              });
+          }
+        }
+        return;
+      }
+      // Group header collapse toggle
+      const headerEl = target.closest(".ai-memory-group-header");
+      if (headerEl) {
+        const body = headerEl.nextElementSibling;
+        const toggle = headerEl.querySelector(".ai-memory-group-toggle");
+        if (body && toggle) {
+          if (body.hasClass("collapsed")) {
+            body.removeClass("collapsed");
+            toggle.textContent = "▼";
+          } else {
+            body.addClass("collapsed");
+            toggle.textContent = "▶";
+          }
+        }
+        return;
+      }
+      // Item body click → open note
+      const itemEl = target.closest("[data-item-path]");
+      if (itemEl) {
+        const path = itemEl.getAttribute("data-item-path");
+        if (path) {
+          const item = this.store.items.find((i) => i.path === path);
+          if (item && !item.isFolder) {
+            const file = this.vault.getAbstractFileByPath(item.path);
+            if (file instanceof TFile) {
+              const leaf = this.app.workspace.getLeaf(false);
+              void leaf.openFile(file);
+            }
+          }
+        }
+      }
+    };
+    this.dropZone.addEventListener("click", this.dropZoneClickHandler);
+
+    this.dropZoneContextmenuHandler = (e: MouseEvent) => {
+      const itemEl = (e.target as HTMLElement).closest("[data-item-path]");
+      if (!itemEl) return;
+      const path = itemEl.getAttribute("data-item-path");
+      if (!path) return;
+      const item = this.store.items.find((i) => i.path === path);
+      if (!item) return;
+      e.preventDefault();
+      const menu = new Menu();
+      if (!item.isFolder) {
+        menu.addItem((menuItem) => {
+          menuItem
+            .setTitle("打开笔记")
+            .setIcon("file")
+            .onClick(async () => {
+              const file = this.vault.getAbstractFileByPath(item.path);
+              if (file instanceof TFile) {
+                const leaf = this.app.workspace.getLeaf(false);
+                await leaf.openFile(file);
+              }
+            });
+        });
+      }
+      menu.addItem((menuItem) => {
+        menuItem
+          .setTitle("在文件浏览器中显示")
+          .setIcon("folder")
+          .onClick(() => {
+            const fileExplorer =
+              this.app.workspace.getLeavesOfType("file-explorer")[0];
+            if (fileExplorer) {
+              this.app.workspace.revealLeaf(fileExplorer);
+            }
+          });
+      });
+      menu.addSeparator();
+      menu.addItem((menuItem) => {
+        menuItem
+          .setTitle("移除记忆")
+          .setIcon("trash")
+          .onClick(async () => {
+            await this.store.removeMemory(item.path);
+            this.renderDropZone();
+          });
+      });
+      menu.showAtMouseEvent(e);
+    };
+    this.dropZone.addEventListener("contextmenu", this.dropZoneContextmenuHandler);
 
     // Footer with server status and actions
     const footer = container.createDiv("ai-memory-panel-footer");
@@ -112,25 +244,26 @@ export class MemoryPanel extends ItemView {
       cls: "ai-memory-btn",
       text: "清空",
     });
-    this.clearBtnClickHandler = async () => {
-      await this.store.clearAll();
-      this.renderDropZone();
+    this.clearBtnClickHandler = (_e: MouseEvent) => {
+      void this.store.clearAll();
+      void this.renderDropZone();
     };
     this.clearBtn.addEventListener("click", this.clearBtnClickHandler);
 
     // Copy MCP config button
-    const copyBtn = actions.createEl("button", {
+    this.copyBtn = actions.createEl("button", {
       cls: "ai-memory-btn",
       text: "📋 配置",
       title: "复制 Claude Code MCP 配置到剪贴板",
     });
-    copyBtn.addEventListener("click", async () => {
-      await this.copyMCPConfig();
-    });
+    this.copyBtnClickHandler = () => {
+      void this.copyMCPConfig();
+    };
+    this.copyBtn.addEventListener("click", this.copyBtnClickHandler);
   }
 
   async onClose(): Promise<void> {
-    // Remove drag event listeners
+    // Remove drag event listeners + delegated listeners on dropZone
     if (this.dropZone) {
       if (this.dragoverHandler) {
         this.dropZone.removeEventListener("dragover", this.dragoverHandler);
@@ -144,6 +277,26 @@ export class MemoryPanel extends ItemView {
         this.dropZone.removeEventListener("drop", this.dropHandler);
         this.dropHandler = null;
       }
+      if (this.dropZoneClickHandler) {
+        this.dropZone.removeEventListener("click", this.dropZoneClickHandler);
+        this.dropZoneClickHandler = null;
+      }
+      if (this.dropZoneContextmenuHandler) {
+        this.dropZone.removeEventListener("contextmenu", this.dropZoneContextmenuHandler);
+        this.dropZoneContextmenuHandler = null;
+      }
+    }
+
+    // Remove toolbar (sort/group) delegated listener
+    if (this.toolbar && this.toolbarClickHandler) {
+      this.toolbar.removeEventListener("click", this.toolbarClickHandler);
+      this.toolbarClickHandler = null;
+    }
+
+    // Remove search input listener
+    if (this.searchInput && this.searchInputHandler) {
+      this.searchInput.removeEventListener("input", this.searchInputHandler);
+      this.searchInputHandler = null;
     }
 
     // Remove button listeners
@@ -153,16 +306,24 @@ export class MemoryPanel extends ItemView {
       this.toggleBtnClickHandler = null;
     }
     if (this.clearBtn && this.clearBtnClickHandler) {
-      this.clearBtn.removeEventListener("click", this.clearBtnClickHandler as any);
+      this.clearBtn.removeEventListener("click", this.clearBtnClickHandler);
       this.clearBtnClickHandler = null;
-      this.clearBtn = null;
+    }
+    if (this.copyBtn && this.copyBtnClickHandler) {
+      this.copyBtn.removeEventListener("click", this.copyBtnClickHandler);
+      this.copyBtnClickHandler = null;
     }
 
+    // Null out all DOM references
     this.dropZone = null;
-    this.onToggleServer = null;
+    this.toolbar = null;
+    this.searchInput = null;
+    this.copyBtn = null;
+    this.clearBtn = null;
     this.countEl = null;
     this.serverStatusDot = null;
     this.serverStatusText = null;
+    this.onToggleServer = null;
   }
 
   /**
@@ -252,6 +413,8 @@ export class MemoryPanel extends ItemView {
 
   /**
    * Render sort toggle buttons + group toggle.
+   * Click handling is delegated to the toolbar (see onOpen); here we only
+   * attach data-* attributes so the delegate can identify which button was clicked.
    */
   private renderSortButtons(container: HTMLElement): void {
     container.empty();
@@ -259,31 +422,24 @@ export class MemoryPanel extends ItemView {
       { key: "time", label: "时间", icon: "🕐" },
       { key: "name", label: "名称", icon: "🔤" },
       { key: "priority", label: "优先级", icon: "⭐" },
+      { key: "recent", label: "最近", icon: "📊" },
     ];
 
     for (const s of sorts) {
-      const btn = container.createEl("button", {
+      container.createEl("button", {
         cls: "ai-memory-sort-btn" + (this.sortKey === s.key ? " active" : ""),
         text: s.icon,
         title: `按${s.label}排序`,
-      });
-      btn.addEventListener("click", () => {
-        this.sortKey = s.key;
-        this.renderSortButtons(container);
-        this.renderDropZone();
+        attr: { "data-sort-key": s.key },
       });
     }
 
     // Group toggle
-    const groupBtn = container.createEl("button", {
+    container.createEl("button", {
       cls: "ai-memory-sort-btn" + (this.groupBy === "tags" ? " active" : ""),
       text: "📂",
       title: this.groupBy === "tags" ? "取消分组" : "按标签分组",
-    });
-    groupBtn.addEventListener("click", () => {
-      this.groupBy = this.groupBy === "tags" ? "none" : "tags";
-      this.renderSortButtons(container);
-      this.renderDropZone();
+      attr: { "data-group-toggle": "tags" },
     });
   }
 
@@ -314,6 +470,8 @@ export class MemoryPanel extends ItemView {
           return a.name.localeCompare(b.name);
         case "priority":
           return b.priority - a.priority || b.addedAt - a.addedAt;
+        case "recent":
+          return (b.lastAccessedAt || 0) - (a.lastAccessedAt || 0) || b.addedAt - a.addedAt;
         case "time":
         default:
           return b.addedAt - a.addedAt;
@@ -377,22 +535,12 @@ export class MemoryPanel extends ItemView {
 
     for (const [groupName, groupItems] of sortedGroups) {
       const header = this.dropZone!.createDiv("ai-memory-group-header");
-      const toggle = header.createSpan({ cls: "ai-memory-group-toggle", text: "▼" });
+      header.createSpan({ cls: "ai-memory-group-toggle", text: "▼" });
       header.createSpan({ cls: "ai-memory-group-name", text: groupName });
       header.createSpan({ cls: "ai-memory-group-count", text: `${groupItems.length}` });
 
       const body = this.dropZone!.createDiv("ai-memory-group-body");
-
-      header.addEventListener("click", () => {
-        const collapsed = body.hasClass("collapsed");
-        if (collapsed) {
-          body.removeClass("collapsed");
-          toggle.textContent = "▼";
-        } else {
-          body.addClass("collapsed");
-          toggle.textContent = "▶";
-        }
-      });
+      // Header click-to-collapse is handled by dropZone's delegated click handler.
 
       for (const item of groupItems) {
         const wrapper = body.createDiv();
@@ -460,8 +608,12 @@ export class MemoryPanel extends ItemView {
 
   /**
    * Build the DOM for a memory item (reused by both flat and grouped rendering).
+   * Event handling (click/contextmenu/remove) is delegated to dropZone (see onOpen);
+   * here we only stamp `data-item-path` so the delegate can resolve the clicked item.
    */
   private buildItemDOM(el: HTMLElement, item: MemoryItem): void {
+    el.setAttribute("data-item-path", item.path);
+
     // Priority indicator
     if (item.priority > 0) {
       el.createSpan({
@@ -498,77 +650,11 @@ export class MemoryPanel extends ItemView {
       text: this.getParentPath(item.path),
     });
 
-    // Remove button
-    const removeBtn = el.createSpan({
+    // Remove button (click handled by dropZone delegation)
+    el.createSpan({
       cls: "ai-memory-item-remove",
       text: "×",
       title: "移除记忆",
-    });
-    removeBtn.addEventListener("click", async (e: MouseEvent) => {
-      e.stopPropagation();
-      await this.store.removeMemory(item.path);
-      this.renderDropZone();
-      new Notice(`已移除: ${item.name}`);
-    });
-
-    // Click to navigate to file
-    el.addEventListener("click", async () => {
-      if (!item.isFolder) {
-        const file = this.vault.getAbstractFileByPath(item.path);
-        if (file instanceof TFile) {
-          const leaf = this.app.workspace.getLeaf(false);
-          await leaf.openFile(file);
-        }
-      }
-    });
-
-    // Right-click context menu
-    el.addEventListener("contextmenu", (e: MouseEvent) => {
-      e.preventDefault();
-      const menu = new Menu();
-
-      if (!item.isFolder) {
-        menu.addItem((menuItem) => {
-          menuItem
-            .setTitle("打开笔记")
-            .setIcon("file")
-            .onClick(async () => {
-              const file = this.vault.getAbstractFileByPath(item.path);
-              if (file instanceof TFile) {
-                const leaf = this.app.workspace.getLeaf(false);
-                await leaf.openFile(file);
-              }
-            });
-        });
-      }
-
-      menu.addItem((menuItem) => {
-        menuItem
-          .setTitle("在文件浏览器中显示")
-          .setIcon("folder")
-          .onClick(() => {
-            // Focus file explorer and reveal path
-            const fileExplorer =
-              this.app.workspace.getLeavesOfType("file-explorer")[0];
-            if (fileExplorer) {
-              this.app.workspace.revealLeaf(fileExplorer);
-            }
-          });
-      });
-
-      menu.addSeparator();
-
-      menu.addItem((menuItem) => {
-        menuItem
-          .setTitle("移除记忆")
-          .setIcon("trash")
-          .onClick(async () => {
-            await this.store.removeMemory(item.path);
-            this.renderDropZone();
-          });
-      });
-
-      menu.showAtMouseEvent(e);
     });
   }
 

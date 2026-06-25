@@ -2,7 +2,7 @@ import { Vault, Notice, TFile, TFolder } from "obsidian";
 import * as fs from "fs";
 import * as path from "path";
 import { MemoryStore, MemoryItem } from "./MemoryStore";
-import { getVaultBasePath, parseFrontmatter, MCP_TOOL_DEFINITIONS } from "./utils";
+import { getVaultBasePath, isPathSafe, parseFrontmatter, MCP_TOOL_DEFINITIONS } from "./utils";
 
 /**
  * BridgeSync writes memory data to a JSON file that the standalone
@@ -22,6 +22,7 @@ export class BridgeSync {
   private autoDiscoveryCache: Partial<MemoryItem>[] | null = null;
   private autoDiscoveryLastScan: number = 0;
   private readonly AUTO_DISCOVERY_INTERVAL_MS = 5 * 60 * 1000; // Rescan every 5 minutes
+  private readonly MAX_FILE_SIZE = 512 * 1024; // 512KB — must match mcp-bridge.js MAX_FILE_SIZE
 
   constructor(store: MemoryStore, vault: Vault, pluginDataDir: string) {
     this.store = store;
@@ -117,6 +118,11 @@ export class BridgeSync {
     // Process pending writes from Claude Code
     const pendingWrites: any[] = existingData.pendingWrites || [];
     const processedIds: string[] = [];
+    // Pending deletes queue (mcp-bridge.js handleDeleteMemory appends here instead of
+    // mutating the memories array directly). Consumed below.
+    const pendingDeletes: any[] = existingData.pendingDeletes || [];
+    // Access log queue (mcp-bridge.js handleGetMemory appends {path, timestamp} here).
+    const accessLog: any[] = existingData.accessLog || [];
 
     for (const write of pendingWrites) {
       if (write.status !== "pending") continue;
@@ -127,6 +133,38 @@ export class BridgeSync {
       } catch (err) {
         write.status = "failed";
         write.error = String(err);
+      }
+    }
+
+    // Process pending deletes: remove from store.items (manual) and persist path
+    // to deletedPaths so auto-discovery does not re-add it on next scan.
+    const processedDeleteIds: string[] = [];
+    for (const del of pendingDeletes) {
+      if (del.status !== "pending") continue;
+      try {
+        await this.store.removeMemory(del.path);
+        this.store.addToDeletedPaths(del.path);
+        del.status = "done";
+        processedDeleteIds.push(del.id);
+      } catch (err) {
+        del.status = "failed";
+        del.error = String(err);
+      }
+    }
+
+    // Consume access log: update lastAccessedAt on matching MemoryItems.
+    // Note: lastAccessedAt is updated in-memory; persistence happens on next store
+    // mutation. Acceptable because it's an auxiliary field.
+    let accessLogUpdated = false;
+    for (const entry of accessLog) {
+      if (!entry.path || typeof entry.timestamp !== "number") continue;
+      const item = this.store.items.find((i) => i.path === entry.path);
+      if (item) {
+        const prev = item.lastAccessedAt || 0;
+        if (entry.timestamp > prev) {
+          item.lastAccessedAt = entry.timestamp;
+          accessLogUpdated = true;
+        }
       }
     }
 
@@ -146,6 +184,8 @@ export class BridgeSync {
         source: item.source || "manual",
       })),
       pendingWrites: pendingWrites.filter((w: any) => w.status === "pending"),
+      pendingDeletes: pendingDeletes.filter((d: any) => d.status === "pending"),
+      accessLog: [],  // Cleared after consumption
     };
 
     try {
@@ -159,6 +199,12 @@ export class BridgeSync {
       if (processedIds.length > 0) {
         new Notice(`已处理 ${processedIds.length} 条 AI 写入请求`);
       }
+      if (processedDeleteIds.length > 0) {
+        new Notice(`已处理 ${processedDeleteIds.length} 条 AI 删除请求`);
+      }
+      if (accessLogUpdated) {
+        console.log("AI Memory Bridge: accessLog consumed, lastAccessedAt updated in-memory");
+      }
     } catch (err) {
       console.error("AI Memory Bridge: Failed to sync bridge data:", err);
     }
@@ -166,11 +212,15 @@ export class BridgeSync {
 
   /**
    * Scan vault for .md files with ai_memory: true in frontmatter.
+   * Skips paths in store.deletedPaths (prevents deleted memories from being
+   * re-added by the next auto-discovery scan).
    */
   private async discoverAutoMemories(): Promise<Partial<MemoryItem>[]> {
     const results: Partial<MemoryItem>[] = [];
+    const deleted = new Set(this.store.deletedPaths);
     const allMdFiles = this.vault.getMarkdownFiles();
     for (const file of allMdFiles) {
+      if (deleted.has(file.path)) continue;
       try {
         const content = await this.vault.read(file);
         if (content.startsWith("---") && content.includes("ai_memory")) {
@@ -247,7 +297,19 @@ export class BridgeSync {
     folder: string;
     id: string;
   }): Promise<void> {
-    const folderPath = write.folder || "AI记忆";
+    // Defense-in-depth: re-validate even though mcp-bridge.js already checks at entry.
+    // Prevents malicious pendingWrites injected directly into bridge file.
+    const folder = write.folder || "AI记忆";
+    if (!isPathSafe(folder)) {
+      throw new Error(`不安全的 folder 路径: ${folder}`);
+    }
+    if (!isPathSafe(write.name)) {
+      throw new Error(`不安全的 name: ${write.name}`);
+    }
+    if (write.content.length > this.MAX_FILE_SIZE) {
+      throw new Error(`content 过大 (${write.content.length} 字符)，超过 ${this.MAX_FILE_SIZE} 限制`);
+    }
+    const folderPath = folder;
     const fileName = `${write.name}.md`;
     const filePath = `${folderPath}/${fileName}`;
 

@@ -18,6 +18,8 @@ export interface MemoryItem {
   priority: number;
   /** Source: "manual" (drag-drop) or "auto" (ai_memory:true frontmatter) */
   source: "manual" | "auto";
+  /** Last time AI accessed this memory via get_memory (timestamp ms) */
+  lastAccessedAt?: number;
 }
 
 export interface MemoryStoreData {
@@ -28,12 +30,15 @@ export interface MemoryStoreData {
   mcpAutoStart: boolean;
   /** Last sync timestamp (for mcp-bridge.js cache invalidation) */
   lastSyncAt?: string;
+  /** Paths persistently marked as deleted (blocks auto-discovery re-adding them) */
+  deletedPaths: string[];
 }
 
 const DEFAULT_DATA: MemoryStoreData = {
   items: [],
   mcpPort: 0, // 0 = auto-pick
   mcpAutoStart: true,
+  deletedPaths: [],
 };
 
 export class MemoryStore {
@@ -57,6 +62,9 @@ export class MemoryStore {
     if (this.data.mcpAutoStart === undefined) {
       this.data.mcpAutoStart = DEFAULT_DATA.mcpAutoStart;
     }
+    if (!this.data.deletedPaths) {
+      this.data.deletedPaths = [];
+    }
     // Migrate items missing v0.3.0 fields
     for (const item of this.data.items) {
       if (item.priority === undefined) item.priority = 0;
@@ -68,6 +76,10 @@ export class MemoryStore {
 
   get items(): MemoryItem[] {
     return this.data.items;
+  }
+
+  get deletedPaths(): string[] {
+    return this.data.deletedPaths;
   }
 
   get mcpPort(): number {
@@ -97,6 +109,9 @@ export class MemoryStore {
     source: "manual" | "auto" = "manual"
   ): Promise<MemoryItem[]> {
     const added: MemoryItem[] = [];
+
+    // Unlock path if it was previously deleted (user re-adding manually)
+    this.removeFromDeletedPaths(fileOrFolder.path);
 
     if (fileOrFolder instanceof TFolder) {
       // Add folder as a memory item
@@ -194,6 +209,24 @@ export class MemoryStore {
     if (this.data.items.length === before) return false;
     await this.saveCallback();
     return true;
+  }
+
+  /**
+   * Add a path to the persistent deleted set (blocks auto-discovery).
+   */
+  addToDeletedPaths(path: string): void {
+    if (!this.data.deletedPaths.includes(path)) {
+      this.data.deletedPaths.push(path);
+      void this.safeSave();
+    }
+  }
+
+  /**
+   * Remove a path from the persistent deleted set (unlocks re-adding).
+   */
+  removeFromDeletedPaths(path: string): void {
+    this.data.deletedPaths = this.data.deletedPaths.filter((p) => p !== path);
+    void this.safeSave();
   }
 
   /**

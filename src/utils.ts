@@ -106,3 +106,32 @@ export const MCP_TOOL_DEFINITIONS = [
     description: "从 AI 记忆列表移除笔记（不删除原文件）。需 confirm: true 确认。",
   },
 ];
+
+/**
+ * Validate that a file path stays within the vault (prevent path traversal).
+ *
+ * Pure-string implementation (no Node.js `path` module) so it works in the
+ * Obsidian plugin environment where `path` may be unavailable. Semantically
+ * equivalent to `isPathSafe` in mcp-bridge.js — used for defense-in-depth on
+ * the plugin side (e.g. BridgeSync.executeWrite re-validates pendingWrites
+ * before touching disk).
+ *
+ * Checks (mirrors mcp-bridge.js):
+ *  1. null / undefined / non-string / empty → false
+ *  2. path traversal: any `..` segment (split on both `/` and `\`) → false
+ *  3. absolute paths (POSIX `/etc` or Windows `C:\` / `C:/`) → false
+ *  4. null bytes / control characters → false
+ *
+ * @param filePath - vault-relative path to validate
+ * @returns true if the path is safe to use
+ */
+export function isPathSafe(filePath: string | null | undefined): boolean {
+  if (!filePath || typeof filePath !== "string") return false;
+  // Block path traversal: any `..` segment (split on both `/` and `\`)
+  if (filePath.split(/[\\/]/).includes("..")) return false;
+  // Block absolute paths (POSIX `/etc` or Windows `C:\` / `C:/`)
+  if (/^(?:\/|[A-Za-z]:[\\/])/.test(filePath)) return false;
+  // Block null bytes and other dangerous control characters
+  if (/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(filePath)) return false;
+  return true;
+}
