@@ -1,5 +1,19 @@
 # 发布检查清单
 
+## v0.4.1 发布说明
+
+### Bug 修复
+- **拖拽 URI 解析**：修复 Obsidian 1.5+ 文件浏览器拖拽返回 `obsidian://open?vault=...&file=...` URI 导致面板报"未找到文件"的 bug。
+  - 新增 `resolveDragPathToVaultPath()` 解析 `obsidian://` URI 的 `file` 参数（URL-decode）
+  - 保留旧版纯路径拖拽兼容
+  - `getAbstractFileByPath` 失败时自动尝试加 `.md` 扩展名（URI 常省略）
+- GUI 验收通过（Obsidian 1.5+ 实测拖拽成功）
+
+### 兼容性
+- bridge 文件格式 v0.3.0（无变化）
+- MCP 工具接口不变
+- 旧版 Obsidian 拖拽行为不变
+
 ## v0.4.0 发布说明
 
 ### 新功能（P2）

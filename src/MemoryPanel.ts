@@ -12,6 +12,40 @@ import { getVaultBasePath } from "./utils";
 
 export const VIEW_TYPE_MEMORY_PANEL = "ai-memory-bridge-panel";
 
+/**
+ * Resolve a drag-drop payload to a vault-relative path.
+ *
+ * Obsidian's file-explorer drag format varies by version:
+ *  - Older / some sources: plain vault-relative path (e.g. "notes/foo.md").
+ *  - Newer (1.5+): `obsidian://open?vault=...&file=...` URI where `file` is
+ *    URL-encoded and often omits the `.md` extension.
+ *
+ * Returns the decoded vault-relative path (trailing `/` stripped for folders),
+ * or `null` if the payload cannot be resolved.
+ */
+function resolveDragPathToVaultPath(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  // obsidian:// URI — only the `open` action with a `file` param is resolvable.
+  // Any other obsidian:// payload returns null (don't treat the URI as a path).
+  if (trimmed.startsWith("obsidian://")) {
+    const match = trimmed.match(/^obsidian:\/\/open\?(?:[^&]*&)*file=([^&]+)/);
+    if (match) {
+      try {
+        return decodeURIComponent(match[1]);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  // Plain vault-relative path (legacy / fallback). Strip trailing "/" used
+  // by folder drags so getAbstractFileByPath can resolve the TFolder.
+  return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
+}
+
 export class MemoryPanel extends ItemView {
   private store: MemoryStore;
   private vault: Vault;
@@ -384,17 +418,25 @@ export class MemoryPanel extends ItemView {
       const data = e.dataTransfer.getData("text/plain");
       if (!data) return;
 
-      // Obsidian file explorer drag format: paths separated by newlines
-      // Folder paths may end with "/"
-      const paths = data
+      // Each line is one dropped item: either a plain vault-relative path
+      // (legacy) or an obsidian://open URI (Obsidian 1.5+).
+      const rawEntries = data
         .split("\n")
         .map((p) => p.trim())
         .filter((p) => p.length > 0);
 
-      for (const rawPath of paths) {
-        // Remove trailing slash for folder detection
-        const cleanPath = rawPath.endsWith("/") ? rawPath.slice(0, -1) : rawPath;
-        const abstractFile = this.vault.getAbstractFileByPath(cleanPath);
+      for (const raw of rawEntries) {
+        const resolved = resolveDragPathToVaultPath(raw);
+        if (!resolved) {
+          new Notice(`无法解析拖拽路径: ${raw}`, 3000);
+          continue;
+        }
+
+        let abstractFile = this.vault.getAbstractFileByPath(resolved);
+        // obsidian:// URIs often omit the .md extension; try appending it.
+        if (!abstractFile && !resolved.endsWith(".md")) {
+          abstractFile = this.vault.getAbstractFileByPath(resolved + ".md");
+        }
 
         if (abstractFile instanceof TFile || abstractFile instanceof TFolder) {
           const added = await this.store.addMemory(abstractFile);
@@ -402,7 +444,7 @@ export class MemoryPanel extends ItemView {
             new Notice(`已添加 ${added.length} 条记忆`);
           }
         } else {
-          new Notice(`未找到文件: ${cleanPath}`, 3000);
+          new Notice(`未找到文件: ${resolved}`, 3000);
         }
       }
 

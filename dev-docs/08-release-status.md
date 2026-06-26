@@ -1,6 +1,20 @@
 # 发布状态 (Release Status)
 
-## 当前版本: v0.4.0
+## 当前版本: v0.4.1
+
+## v0.4.1 改动摘要
+
+### Bug 修复
+- **拖拽 URI 解析** ([src/MemoryPanel.ts](file:///d:/ai-memory-bridge/src/MemoryPanel.ts))：修复 Obsidian 1.5+ 文件浏览器拖拽返回 `obsidian://open?vault=...&file=<urlencoded path>` URI 而非纯路径，导致 `vault.getAbstractFileByPath()` 失败、面板报"未找到文件: obsidian://..."的 bug。
+  - 新增模块函数 `resolveDragPathToVaultPath()`：正则提取 `file` 参数 + `decodeURIComponent`，纯路径走旧逻辑（向后兼容），尾斜杠文件夹路径自动剥离
+  - `dropHandler` 改用该函数解析；`getAbstractFileByPath` 返回 null 时自动尝试加 `.md` 扩展名（URI 常省略扩展名）
+  - 解析失败明确报 `无法解析拖拽路径: <raw>` 而非把 URI 当路径报"未找到文件"
+- GUI 验收通过（用户在 Obsidian 1.5+ 实测拖拽 .md 文件成功加入记忆）
+
+### 兼容性
+- bridge 文件格式 v0.3.0（无变化）
+- MCP 工具接口不变
+- 旧版 Obsidian（纯路径拖拽）行为不变
 
 ## v0.4.0 改动摘要
 

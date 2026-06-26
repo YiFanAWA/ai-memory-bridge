@@ -65,6 +65,19 @@
 | Q39 | MemoryPanel 事件全部命名 handler + 事件委托 | 代码审查 + `as any` / `addEventListener(.*=>` 全文搜索为 0 | ✅ |
 | Q40 | mcp-bridge.js 版本号 0.3.1 | stdin 调 initialize 验证 serverInfo.version | ✅ |
 
+## v0.4.1 拖拽修复验收
+
+| # | 验收项 | 方法 | 状态 |
+|---|--------|------|------|
+| Q41 | 拖拽 .md 文件到面板成功加入记忆 | Obsidian 1.5+ GUI 实测：从文件浏览器拖 .md 到面板，应显示"已添加 1 条记忆" | ✅ |
+| Q42 | 拖拽文件夹到面板成功加入文件夹 + 子 .md | Obsidian GUI 实测：拖文件夹，应显示"已添加 N 条记忆" | ⬜ 需 GUI |
+| Q43 | 拖拽多个文件（Ctrl+多选）成功批量加入 | Obsidian GUI 实测：多选后拖拽 | ⬜ 需 GUI |
+| Q44 | 拖拽已添加文件不重复加入 | Obsidian GUI 实测：重复拖同一文件应无 Notice | ⬜ 需 GUI |
+| Q45 | resolveDragPathToVaultPath 解析 obsidian:// URI | 单元测试：`obsidian://open?vault=X&file=a%2Fb.md` → `a/b.md` | ✅ |
+| Q46 | resolveDragPathToVaultPath 纯路径兼容 | 单元测试：`notes/foo.md` → `notes/foo.md`（不变） | ✅ |
+| Q47 | resolveDragPathToVaultPath 文件夹尾斜杠剥离 | 单元测试：`notes/folder/` → `notes/folder` | ✅ |
+| Q48 | mcp-bridge.js 版本号 0.4.1 | stdin 调 initialize 验证 serverInfo.version | ✅ |
+
 ## 回归测试命令
 
 ```bash

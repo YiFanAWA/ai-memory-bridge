@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * AI Memory Bridge - MCP Server v0.3.1
+ * AI Memory Bridge - MCP Server v0.4.1
  *
  * Reads memory index from Obsidian plugin, serves content directly from
  * vault .md files (always fresh). Includes TF-IDF semantic search,
@@ -23,7 +23,7 @@ const readline = require("readline");
 // ─── Configuration ───────────────────────────────────────────────────────────
 
 const SERVER_NAME = "ai-memory-bridge";
-const SERVER_VERSION = "0.4.0";
+const SERVER_VERSION = "0.4.1";
 const MAX_FILE_SIZE = 512 * 1024; // 512KB max per file
 const MAX_SEARCH_RESULTS = 50;
 const MAX_SNIPPET_LEN = 120;
